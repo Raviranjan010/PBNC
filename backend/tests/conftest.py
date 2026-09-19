@@ -43,12 +43,6 @@ async def override_get_db() -> AsyncGenerator[AsyncSession, None]:
 
 app.dependency_overrides[get_db] = override_get_db
 
-@pytest.fixture(scope="session")
-def event_loop():
-    loop = asyncio.get_event_loop_policy().new_event_loop()
-    yield loop
-    loop.close()
-
 @pytest.fixture(autouse=True, scope="function")
 async def prepare_database():
     async with test_async_engine.begin() as conn:
