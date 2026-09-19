@@ -73,7 +73,8 @@ async def test_upload_sample_exam_with_key_no_leak(client: AsyncClient, test_use
     # Check questions endpoint
     q_res = await client.get(f"/api/v1/documents/{doc_id}/questions", headers=test_user_a["headers"])
     assert q_res.status_code == 200
-    questions = q_res.json()
+    data = q_res.json()
+    questions = data["items"]
     assert len(questions) == 2
 
     for q in questions:
@@ -91,8 +92,15 @@ async def test_upload_sample_exam_with_key_no_leak(client: AsyncClient, test_use
     ans_res = await client.get(f"/api/v1/documents/{doc_id}/answers", headers=test_user_a["headers"])
     assert ans_res.status_code == 200
     answers = ans_res.json()
-    assert answers["answer_key_found"] is True
-    mappings = {item["question_number"]: item["assigned_answer"] for item in answers["matrix"]}
+    assert len(answers) >= 1
+    mappings = answers[0]["parsed_mappings"]
     assert mappings.get("1") == "A"
     assert mappings.get("2") == "C"
+
+    # Confirm answers are assigned on questions
+    q1 = next(q for q in questions if q["question_number"] == "1")
+    assert q1["answer"] == "A"
+    assert q1["answer_status"] == "CONFIRMED"
+    assert q2["answer"] == "C"
+    assert q2["answer_status"] == "CONFIRMED"
 
