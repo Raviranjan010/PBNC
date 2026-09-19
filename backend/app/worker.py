@@ -1,7 +1,7 @@
 import logging
 import threading
 from backend.app.core.celery_app import celery_app
-from backend.app.core.database import SyncSessionLocal
+from backend.app.core import database
 from backend.app.services.pipeline import ExtractionPipeline
 
 logger = logging.getLogger(__name__)
@@ -12,7 +12,7 @@ def process_document_task(self, document_id: str, job_id: str):
     Celery background worker task for processing uploaded documents.
     """
     logger.info(f"Starting Celery processing task for document {document_id}, job {job_id}")
-    db = SyncSessionLocal()
+    db = database.SyncSessionLocal()
     try:
         ExtractionPipeline.execute_pipeline(db, document_id, job_id)
     except Exception as exc:
@@ -32,7 +32,7 @@ def dispatch_document_task(document_id: str, job_id: str) -> None:
     """
     from backend.app.core.config import settings
     if settings.CELERY_TASK_ALWAYS_EAGER:
-        db = SyncSessionLocal()
+        db = database.SyncSessionLocal()
         try:
             ExtractionPipeline.execute_pipeline(db, document_id, job_id)
         finally:
@@ -44,7 +44,7 @@ def dispatch_document_task(document_id: str, job_id: str) -> None:
     except Exception as exc:
         logger.warning(f"Celery broker unavailable ({exc}); falling back to background thread execution.")
         def run_sync():
-            db = SyncSessionLocal()
+            db = database.SyncSessionLocal()
             try:
                 ExtractionPipeline.execute_pipeline(db, document_id, job_id)
             finally:

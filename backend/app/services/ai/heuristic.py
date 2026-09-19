@@ -1,12 +1,15 @@
 import re
 from typing import List, Dict, Any, Optional
 from backend.app.services.ai.base import AIProvider, ParsedQuestion, ParsedOption
+from backend.app.services.answer_matcher import ANSWER_KEY_BOUNDARY_REGEX
 
 class HeuristicProvider(AIProvider):
     """
     Deterministic structural parser that accurately parses exam documents,
     tracks multi-page boundaries, extracts options, and provides reliable confidence signals.
     """
+    ANSWER_KEY_BOUNDARY_REGEX = ANSWER_KEY_BOUNDARY_REGEX
+
     QUESTION_REGEX = re.compile(
         r'(?:^|\n)\s*(?:(?:Q(?:uestion)?\.?\s*(\d+))|(?:\((\d+)\))|(?:(\d+)\s*[\.\)]))\s+(.+?)(?=(?:\n\s*(?:Q(?:uestion)?\.?\s*\d+|\(\d+\)|\d+\s*[\.\)])\s+)|\Z)',
         re.DOTALL | re.IGNORECASE
@@ -92,7 +95,19 @@ class HeuristicProvider(AIProvider):
                         key_map = {"1": "A", "2": "B", "3": "C", "4": "D"}
                         k = key_map.get(k, k)
                         v = om.group(3).strip()
+                        # Truncate at answer key boundary if present
+                        b_match = self.ANSWER_KEY_BOUNDARY_REGEX.search(v)
+                        if b_match:
+                            v = v[:b_match.start()].strip()
+                        v = re.sub(r'\n\s*[-=_]{3,}\s*$', '', v).strip()
                         options.append(ParsedOption(key=k, text=v))
+                else:
+                    # Truncate question prompt at answer key boundary if no options
+                    b_match = self.ANSWER_KEY_BOUNDARY_REGEX.search(q_prompt)
+                    if b_match:
+                        q_prompt = q_prompt[:b_match.start()].strip()
+
+                q_prompt = re.sub(r'\n\s*[-=_]{3,}\s*$', '', q_prompt).strip()
 
                 # Question type determination
                 q_type = "MCQ" if len(options) >= 2 else "SHORT"

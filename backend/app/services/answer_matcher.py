@@ -1,6 +1,11 @@
 import re
 from typing import Dict, List, Tuple, Optional, Any
 
+ANSWER_KEY_BOUNDARY_REGEX = re.compile(
+    r'(?:\n|\A)\s*(?:[-=_]{3,}\s*\n\s*)?(?:(?:Answer(?:\(s\)|s)?\s*Key|Answer(?:\(s\)|s)?|Solutions?|Key\s*(?:Sheet)?)\s*(?:[:\-]|\n|\Z)|(?:Q(?:uestion)?\.?\s*|\(?)\s*\d+\)?[\s:\.\-]+(?:\(?[A-Da-d1-4]\)?))',
+    re.IGNORECASE
+)
+
 class DetectedAnswerKey:
     def __init__(self, mappings: Dict[str, str], raw_text: str, detected_format: str, source_page: Optional[int] = None):
         self.mappings = mappings  # {"1": "A", "2": "B"}
@@ -11,10 +16,10 @@ class DetectedAnswerKey:
 class AnswerMatcher:
     # Patterns for answer keys
     # 1. Block header: e.g. "Answer Key", "Answers:", "Key:"
-    KEY_HEADER_REGEX = re.compile(r'(?:Answer\s*Key|Answers?|Solutions?|Key\s*Sheet)[\s:\-]+(.*?)(?=\n\s*\n|\Z)', re.IGNORECASE | re.DOTALL)
+    KEY_HEADER_REGEX = re.compile(r'(?:Answer(?:\(s\)|s)?\s*Key|Answer(?:\(s\)|s)?|Solutions?|Key\s*(?:Sheet)?)[\s:\-]+(.*?)(?=\n\s*\n|\Z)', re.IGNORECASE | re.DOTALL)
 
     # 2. Pair patterns: "1. A", "1-A", "1: A", "Q1 A", "Q1: (A)", "(1) A"
-    PAIR_REGEX = re.compile(r'(?:Q(?:uestion)?\.?\s*|\(?)\b(\d+)\b\)?[\s:\.\-]+(?:\(?([A-Da-d1-4]|True|False)\)?)')
+    PAIR_REGEX = re.compile(r'(?:Q(?:uestion)?\.?\s*|\(?)\s*(\d+)\)?[\s:\.\-]+(?:\(?([A-Da-d1-4]|True|False)\)?)', re.IGNORECASE)
 
     @classmethod
     def find_answer_key_in_pages(cls, pages: List[Dict[str, Any]]) -> Optional[DetectedAnswerKey]:
