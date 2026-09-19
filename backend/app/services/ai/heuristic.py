@@ -11,7 +11,7 @@ class HeuristicProvider(AIProvider):
     ANSWER_KEY_BOUNDARY_REGEX = ANSWER_KEY_BOUNDARY_REGEX
 
     QUESTION_REGEX = re.compile(
-        r'(?:^|\n)\s*(?:(?:Q(?:uestion)?\.?\s*(\d+))|(?:\((\d+)\))|(?:(\d+)\s*[\.\)]))\s+(.+?)(?=(?:\n\s*(?:Q(?:uestion)?\.?\s*\d+|\(\d+\)|\d+\s*[\.\)])\s+)|\Z)',
+        r'(?:^|\n)\s*(?:(?:Q(?:uestion)?\.?\s*(\d+)[\.\:]?)|(?:\((\d+)\))|(?:(\d+)\s*[\.\)]))\s+(.+?)(?=(?:\n\s*(?:Q(?:uestion)?\.?\s*\d+[\.\:]?|\(\d+\)|\d+\s*[\.\)])\s+)|\Z)',
         re.DOTALL | re.IGNORECASE
     )
 
