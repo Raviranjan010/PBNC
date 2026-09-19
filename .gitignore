@@ -1,0 +1,67 @@
+# Dependencies
+node_modules/
+frontend/node_modules/
+.pnp
+.pnp.js
+
+# Testing and Coverage
+.pytest_cache/
+__pycache__/
+*.py[cod]
+*$py.class
+.coverage
+htmlcov/
+*.egg-info/
+
+# Next.js Build Outputs
+.next/
+frontend/.next/
+out/
+build/
+dist/
+
+# Local Databases and runtime data
+*.db
+*.sqlite
+*.sqlite3
+papermind.db
+test_papermind.db
+
+# Storage Files (Preserve folder structure via .gitkeep)
+storage/uploads/*
+!storage/uploads/.gitkeep
+storage/pages/*
+!storage/pages/.gitkeep
+
+# Environment variables
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+*.local
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# IDE and Editor configs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Celery
+celerybeat-schedule
+celerybeat.pid
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
