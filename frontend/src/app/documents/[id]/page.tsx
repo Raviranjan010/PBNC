@@ -15,6 +15,7 @@ import {
   Clock,
   Layers,
   FileCheck,
+  KeyRound,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { DocumentDetail } from "@/lib/types";
@@ -84,6 +85,12 @@ export default function DocumentDetailPage() {
             <Button variant="outline" size="sm">
               <HelpCircle className="w-3.5 h-3.5 mr-1.5" />
               Questions ({doc.questions_count})
+            </Button>
+          </Link>
+          <Link href={`/documents/${doc.id}/answers`}>
+            <Button variant="outline" size="sm">
+              <KeyRound className="w-3.5 h-3.5 mr-1.5" />
+              Answer Keys
             </Button>
           </Link>
           {doc.review_required_count > 0 && (

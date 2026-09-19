@@ -120,13 +120,13 @@ class ExtractionPipeline:
                 for p in saved_pages
             ]
 
-            # Run async extraction provider in synchronous loop
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            extracted_questions = loop.run_until_complete(
-                ai_provider.extract_structured_questions(pages_payload)
-            )
-            loop.close()
+            # Run async extraction provider safely in isolated thread
+            import concurrent.futures
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+                extracted_questions = executor.submit(
+                    asyncio.run,
+                    ai_provider.extract_structured_questions(pages_payload)
+                ).result()
 
             # Step 4: Answer Key Matching
             cls.update_job_step(db, job, "MATCHING_ANSWERS", "Detecting answer keys and associating solutions.")
