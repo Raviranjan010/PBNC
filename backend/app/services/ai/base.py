@@ -13,6 +13,8 @@ class ParsedQuestion(BaseModel):
     options: List[ParsedOption] = []
     answer: Optional[str] = None
     answer_status: str = "CONFIRMED"  # CONFIRMED, UNCERTAIN, NOT_FOUND
+    answer_source_page: Optional[int] = None
+    answer_source_document_id: Optional[str] = None
     source_pages: List[int] = []
     confidence: float = 0.85
     warnings: List[str] = []
