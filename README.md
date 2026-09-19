@@ -124,7 +124,7 @@ Run the full automated test suite covering authentication, multi-tenant cross-us
 python -m pytest backend/tests -v
 ```
 
-All 16 test suites pass with 100% test integrity.
+All 18 automated tests pass with 100% test integrity.
 
 ---
 
@@ -138,20 +138,19 @@ Use this numbered walkthrough script and the provided test fixtures in [`/sample
 | **2** | **Uploading an Image** | `samples/sample_scanned_exam.png` | `POST /api/v1/documents/upload` or UI Dashboard Upload Box | MIME detection identifies `image/png`, processes single-page image through extraction worker. |
 | **3** | **Processing a Scanned/Low-Quality Document** | `samples/sample_low_quality_scan.png` | `GET /api/v1/documents/{id}/review-items` or UI `/documents/{id}/review` | OCR degradation detected; extraction warning attached; document flagged for review (`review_required=true`). |
 | **4** | **Extracting Multiple Questions** | `samples/sample_digital_exam.pdf` | `GET /api/v1/documents/{id}/questions` or UI `/documents/{id}/questions` | 4 distinct questions extracted (Q1 Normalization, Q2 Stack LIFO, Q3 BST, Q4 Lambda) with page provenance. |
-| **5** | **Handling a Question Spanning Multiple Pages** | `samples/sample_multipage_question.pdf` | `GET /api/v1/documents/{id}/questions` | Question 2 starts on Page 1 and options finish on Page 2. Extracted with `source_pages: [1, 2]`. |
-| **6** | **Extracting Question Options** | `samples/sample_digital_exam.pdf` | `GET /api/v1/questions/{id}` | All MCQ options (A, B, C, D) extracted with intact keys and distinct option text. |
-| **7** | **Detecting and Associating an Answer Key** | `samples/sample_exam_with_key.pdf` & `samples/sample_separate_answer_key.pdf` | `GET /api/v1/documents/{id}/answers` & `POST /api/v1/documents/{id}/related` | Answer key detected; Q1 associated with `A`, Q2 with `C`. Provenance records source page and doc ID. |
-| **8** | **Showing Uncertain / Low-Confidence Extraction** | `samples/sample_low_quality_scan.png` | UI `/review` (Human Review Queue) | Question displayed with confidence < 0.70 and `review_required: true`. Visible uncertainty flag shown. |
-| **9** | **Retrieving Final Structured Question Data** | Any processed document | `GET /api/v1/documents/{id}/export/json` & `GET /api/v1/documents/{id}/export/csv` | Valid JSON array of structured questions and downloadable CSV file generated live from database records. |
-| **10** | **Handling an Invalid / Unsupported Document** | `samples/sample_malformed.pdf` | `POST /api/v1/documents/upload` | Immediate HTTP 400 Bad Request: *"Unsupported or unrecognized file format. Only PDF, PNG, and JPEG documents are permitted."* |
+| **5** | **Multi-Page Question Handling** | `samples/sample_multipage_question.pdf` | `GET /api/v1/documents/{id}/questions` or UI `/documents/[id]` | Question 2 clearly indicates `source_pages: [1, 2]` across page split. |
+| **6** | **Answer-Key Processing** | `samples/sample_exam_with_key.pdf` | `GET /api/v1/documents/{id}/answers` or UI `/documents/{id}/answers` | Inline answer key detected (`Q1->A, Q2->C`), confirmed on question objects; no answer key header leakage into option text. |
+| **7** | **Confidence Scoring & Review Flagging** | `samples/sample_low_quality_scan.png` | `GET /api/v1/review` or UI `/review` | Questions with confidence < 0.85 surfaced in human review queue with actionable reasons. |
+| **8** | **Split-Screen Human Review & Edit** | Any document with flagged questions | `GET /api/v1/questions/{id}` & `PATCH /api/v1/questions/{id}` or UI `/questions/[id]` | Side-by-side view with original page snapshot, live editing of text/options, instant re-scoring. |
+| **9** | **Exporting Extracted Questions** | Processed document | `GET /api/v1/documents/{id}/export/json` & `/export/csv` or UI Export Buttons | Real structured JSON and RFC 4180 CSV generated and downloaded. |
+| **10**| **Security & Multi-Tenancy Isolation** | Two registered user accounts | `GET /api/v1/documents/{user_a_doc_id}` by User B | Returns `403 Forbidden` with `"Access forbidden"`. Zero data leakage across tenants. |
 
 ---
 
-## 7. AI Usage Disclosure (Assignment Section 15)
+## 7. AI Provider Architecture
 
-In compliance with Section 15 of the Pragati Bharti engineering assignment:
-- **Architectural Abstraction**: PaperMind implements a pluggable `AIProvider` interface.
-- **Supported Providers**:
+PaperMind includes a swappable multi-provider architecture conforming to the `AIProvider` abstract base class:
+- **Available Providers**:
   - `GeminiProvider`: Uses Google Gemini models (`gemini-1.5-flash`) via REST API with strict JSON schema validation.
   - `OpenAIProvider`: Uses OpenAI chat completion API (`gpt-4o-mini`) with structured JSON mode.
   - `HeuristicProvider`: Built-in deterministic structural parser used as an offline/local fallback.
@@ -163,6 +162,14 @@ In compliance with Section 15 of the Pragati Bharti engineering assignment:
 
 - **Interactive Swagger UI**: `http://localhost:8000/docs`
 - **Postman Collection (v2.1)**: Located at [`postman/PaperMind.postman_collection.json`](postman/PaperMind.postman_collection.json) and downloadable via the frontend `/api-docs` page.
+
+### Swagger UI Authentication Flow
+1. Navigate to `http://localhost:8000/docs`.
+2. Expand `POST /api/v1/auth/login`, click **Try it out**, enter your JSON credentials (`{"email": "...", "password": "..."}`), and click **Execute**.
+3. Copy the returned `access_token` string from the JSON response.
+4. Click the green **Authorize** padlock button at the top right of Swagger UI.
+5. Paste the token into the **Value** field and click **Authorize**.
+6. All protected endpoints (`/documents`, `/questions`, `/review`, `/analytics`, `/auth/me`) are immediately authenticated.
 
 ---
 
