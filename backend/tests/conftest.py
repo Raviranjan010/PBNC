@@ -60,7 +60,8 @@ async def prepare_database():
         await conn.run_sync(Base.metadata.create_all)
     yield
     async with test_async_engine.begin() as conn:
-        await conn.run_sync(Base.metadata.drop_all)
+        for table in reversed(Base.metadata.sorted_tables):
+            await conn.execute(table.delete())
 
 @pytest.fixture
 async def client() -> AsyncGenerator[AsyncClient, None]:
