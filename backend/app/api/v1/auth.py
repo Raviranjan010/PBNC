@@ -35,16 +35,11 @@ async def register(req: RegisterRequest, db: AsyncSession = Depends(get_db)):
 
 @router.post("/login", response_model=TokenResponse)
 async def login(
-    req: Union[LoginRequest, OAuth2PasswordRequestForm = Depends()],
+    req: LoginRequest,
     db: AsyncSession = Depends(get_db)
 ):
-    # Support both JSON payload and OAuth2 form data
-    if isinstance(req, OAuth2PasswordRequestForm):
-        email = req.username
-        password = req.password
-    else:
-        email = req.email
-        password = req.password
+    email = req.email
+    password = req.password
 
     stmt = select(User).where(User.email == email)
     res = await db.execute(stmt)
