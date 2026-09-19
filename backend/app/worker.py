@@ -27,11 +27,19 @@ def process_document_task(self, document_id: str, job_id: str):
 
 def dispatch_document_task(document_id: str, job_id: str) -> None:
     """
-    Dispatches document to Celery. If Celery broker is unavailable or in local dev/testing
-    without a Redis instance, gracefully executes via a background daemon thread.
+    Dispatches document to Celery. If Celery task_always_eager is enabled or
+    broker is unavailable, executes in-process or via thread.
     """
+    from backend.app.core.config import settings
+    if settings.CELERY_TASK_ALWAYS_EAGER:
+        db = SyncSessionLocal()
+        try:
+            ExtractionPipeline.execute_pipeline(db, document_id, job_id)
+        finally:
+            db.close()
+        return
+
     try:
-        # Attempt standard Celery dispatch
         process_document_task.delay(document_id, job_id)
     except Exception as exc:
         logger.warning(f"Celery broker unavailable ({exc}); falling back to background thread execution.")

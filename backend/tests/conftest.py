@@ -14,7 +14,11 @@ from backend.app.core.database import Base, get_db
 from backend.app.core.security import get_password_hash, create_access_token
 from backend.app.models.user import User
 
-TEST_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
+import os
+from backend.app.core.config import settings
+settings.CELERY_TASK_ALWAYS_EAGER = True
+
+TEST_DATABASE_URL = "sqlite+aiosqlite:///./test_papermind.db"
 
 test_async_engine = create_async_engine(
     TEST_DATABASE_URL,
@@ -29,6 +33,13 @@ TestAsyncSessionLocal = async_sessionmaker(
     autocommit=False,
     autoflush=False,
 )
+
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+from backend.app.core import database
+
+test_sync_engine = create_engine("sqlite:///./test_papermind.db", echo=False)
+database.SyncSessionLocal = sessionmaker(bind=test_sync_engine, autocommit=False, autoflush=False)
 
 async def override_get_db() -> AsyncGenerator[AsyncSession, None]:
     async with TestAsyncSessionLocal() as session:
