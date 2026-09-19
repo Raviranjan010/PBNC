@@ -4,7 +4,7 @@ import csv
 import io
 import json
 from httpx import AsyncClient
-from backend.app.core.database import TestAsyncSessionLocal
+from backend.tests.conftest import TestAsyncSessionLocal
 from backend.app.models.document import Document
 from backend.app.models.question import Question, QuestionOption
 
