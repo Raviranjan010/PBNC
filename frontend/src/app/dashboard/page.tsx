@@ -42,7 +42,7 @@ export default function DashboardPage() {
         api.documents.list(),
         api.analytics.get(),
       ]);
-      setDocuments(docs);
+      setDocuments(docs.items);
       setAnalytics(stats);
     } catch (err: any) {
       if (err.status === 401) {

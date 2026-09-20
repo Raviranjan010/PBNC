@@ -21,13 +21,13 @@ export default function GlobalQuestionsPage() {
   const loadAll = async () => {
     setLoading(true);
     try {
-      const docs = await api.documents.list();
-      setDocuments(docs);
+      const docsRes = await api.documents.list({ limit: 100 });
+      setDocuments(docsRes.items);
       
       const qMap: Record<string, Question[]> = {};
       await Promise.all(
-        docs.map(async (d) => {
-          const res = await api.questions.listForDoc(d.id);
+        docsRes.items.map(async (d) => {
+          const res = await api.questions.listForDoc(d.id, { limit: 100 });
           qMap[d.id] = res.items;
         })
       );
