@@ -172,7 +172,11 @@ export default function DocumentAnswersPage() {
                         )}
                       </td>
                       <td className="px-4 py-3">
-                        {isUncertain ? (
+                        {q.answer_status === "INVALID" ? (
+                          <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-danger bg-danger-light px-2 py-0.5 rounded border border-danger/20">
+                            <AlertTriangle className="w-3 h-3 shrink-0" /> INVALID
+                          </span>
+                        ) : isUncertain ? (
                           <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-warning bg-warning-light px-2 py-0.5 rounded border border-warning/20">
                             <AlertTriangle className="w-3 h-3 shrink-0" /> UNCERTAIN
                           </span>

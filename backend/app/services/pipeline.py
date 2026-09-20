@@ -15,9 +15,24 @@ from backend.app.services.ocr_processor import OCRProcessor
 from backend.app.services.ai import get_ai_provider
 from backend.app.services.answer_matcher import AnswerMatcher, DetectedAnswerKey
 from backend.app.services.confidence import ConfidenceCalculator
+import logging
 import asyncio
 
+logger = logging.getLogger("papermind.pipeline")
+
 class ExtractionPipeline:
+    @classmethod
+    def cleanup_for_retry(cls, db: Session, document_id: str) -> None:
+        """
+        Cleans up previous extraction data for a deliberate retry:
+        Deletes previous questions (and cascaded options), warnings, review items, and answer keys.
+        """
+        db.query(Question).filter(Question.document_id == document_id).delete(synchronize_session=False)
+        db.query(ExtractionWarning).filter(ExtractionWarning.document_id == document_id).delete(synchronize_session=False)
+        db.query(ReviewItem).filter(ReviewItem.document_id == document_id).delete(synchronize_session=False)
+        db.query(AnswerKey).filter(AnswerKey.document_id == document_id).delete(synchronize_session=False)
+        db.commit()
+
     @classmethod
     def update_job_step(cls, db: Session, job: ProcessingJob, step_name: str, message: str, status: str = "PROCESSING"):
         job.status = status
@@ -37,11 +52,28 @@ class ExtractionPipeline:
         Synchronous pipeline worker executor called by Celery or inline task runner.
         Follows strict pipeline order:
         Document Loading -> Page Text / OCR -> AI Extraction -> Answer Matching -> Confidence Calculation -> DB Persistence.
+        Includes idempotency guard against Celery redelivery/retries.
         """
         doc = db.query(Document).filter(Document.id == document_id).first()
         job = db.query(ProcessingJob).filter(ProcessingJob.id == job_id).first()
 
         if not doc or not job:
+            return
+
+        # Idempotency guard:
+        # Check if job or document is already in a terminal state
+        terminal_statuses = {"COMPLETED", "PARTIAL", "REVIEW_REQUIRED", "FAILED"}
+        if job.status in terminal_statuses:
+            logger.warning(
+                f"[IDEMPOTENCY] Job {job_id} for document {document_id} is already in terminal state '{job.status}'. Skipping duplicate execution."
+            )
+            return
+
+        existing_questions = db.query(Question.id).filter(Question.document_id == document_id).count()
+        if doc.status in terminal_statuses and existing_questions > 0:
+            logger.warning(
+                f"[IDEMPOTENCY] Document {document_id} already in terminal state '{doc.status}' with {existing_questions} questions. Skipping duplicate execution."
+            )
             return
 
         try:

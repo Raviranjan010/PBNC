@@ -23,10 +23,7 @@ logger = logging.getLogger("papermind")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup: ensure tables exist in SQLite/local environments
-    async with async_engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    logger.info("Database schemas initialized.")
+    logger.info("Application starting up. Database schema managed by Alembic migrations.")
     yield
     # Shutdown
     await async_engine.dispose()

@@ -118,7 +118,9 @@ export default function GlobalReviewQueuePage() {
                   <div className="p-2.5 bg-warning-light/50 border border-warning/20 rounded text-[11px] text-text-muted flex items-start gap-2">
                     <AlertTriangle className="w-3.5 h-3.5 text-warning shrink-0 mt-0.5" />
                     <span>
-                      {q.answer_status === "UNCERTAIN"
+                      {q.answer_status === "INVALID"
+                        ? "Invalid answer key mapping: key does not match any extracted question options."
+                        : q.answer_status === "UNCERTAIN"
                         ? "Uncertain answer key mapping. Review question prompt and options against source document."
                         : "Extraction confidence is below automated verification threshold (0.90)."}
                     </span>

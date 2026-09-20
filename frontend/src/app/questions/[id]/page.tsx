@@ -331,6 +331,11 @@ export default function QuestionDetailPage() {
                   </option>
                 ))}
               </select>
+              {question.answer_status === "INVALID" && (
+                <span className="text-danger text-xs font-medium flex items-center gap-1">
+                  <AlertTriangle className="w-3.5 h-3.5" /> Flagged as INVALID (key does not match options)
+                </span>
+              )}
               {question.answer_status === "UNCERTAIN" && (
                 <span className="text-warning text-xs font-medium flex items-center gap-1">
                   <AlertTriangle className="w-3.5 h-3.5" /> Flagged as uncertain by pipeline

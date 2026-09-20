@@ -191,6 +191,11 @@ export default function DocumentQuestionsPage() {
                         {q.answer || "None"}
                       </strong>
                     </span>
+                    {q.answer_status === "INVALID" && (
+                      <span className="text-danger text-[11px] font-medium flex items-center gap-1">
+                        <AlertTriangle className="w-3 h-3" /> Invalid mapping
+                      </span>
+                    )}
                     {q.answer_status === "UNCERTAIN" && (
                       <span className="text-warning text-[11px] font-medium flex items-center gap-1">
                         <AlertTriangle className="w-3 h-3" /> Uncertain solution

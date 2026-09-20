@@ -76,8 +76,9 @@ export interface Question {
   question_type: string;
   options: Option[];
   answer?: string | null;
-  answer_status: "CONFIRMED" | "UNCERTAIN" | "NOT_FOUND";
+  answer_status: "CONFIRMED" | "UNCERTAIN" | "NOT_FOUND" | "INVALID";
   answer_source_page?: number | null;
+  answer_source_document_id?: string | null;
   confidence: number;
   status: "VERIFIED" | "PARTIAL" | "REVIEW_REQUIRED";
   review_required: boolean;
@@ -89,7 +90,18 @@ export interface Question {
 
 export interface QuestionListResponse {
   total: number;
+  page: number;
+  limit: number;
+  has_next: boolean;
   items: Question[];
+}
+
+export interface PaginatedDocumentResponse {
+  total: number;
+  page: number;
+  limit: number;
+  has_next: boolean;
+  items: Document[];
 }
 
 export interface QuestionUpdatePayload {
