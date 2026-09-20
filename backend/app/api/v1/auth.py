@@ -8,10 +8,16 @@ from backend.app.core.security import get_password_hash, verify_password, create
 from backend.app.models.user import User
 from backend.app.schemas.auth import RegisterRequest, LoginRequest, TokenResponse, UserResponse
 from backend.app.api.deps import get_current_user
+from backend.app.core.rate_limiter import rate_limit_auth
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
-@router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/register",
+    response_model=UserResponse,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(rate_limit_auth)]
+)
 async def register(req: RegisterRequest, db: AsyncSession = Depends(get_db)):
     stmt = select(User).where(User.email == req.email)
     res = await db.execute(stmt)
@@ -32,7 +38,11 @@ async def register(req: RegisterRequest, db: AsyncSession = Depends(get_db)):
     await db.refresh(new_user)
     return new_user
 
-@router.post("/login", response_model=TokenResponse)
+@router.post(
+    "/login",
+    response_model=TokenResponse,
+    dependencies=[Depends(rate_limit_auth)]
+)
 async def login(
     req: LoginRequest,
     db: AsyncSession = Depends(get_db)

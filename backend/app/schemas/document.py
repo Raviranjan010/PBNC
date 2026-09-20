@@ -40,6 +40,13 @@ class DocumentResponse(BaseModel):
     class Config:
         from_attributes = True
 
+class PaginatedDocumentResponse(BaseModel):
+    total: int
+    page: int = 1
+    limit: int = 20
+    has_next: bool = False
+    items: List[DocumentResponse]
+
 class DocumentDetailResponse(DocumentResponse):
     questions_count: int = 0
     review_required_count: int = 0
