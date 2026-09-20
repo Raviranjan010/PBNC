@@ -2,6 +2,7 @@ import { getToken } from "./auth";
 import {
   User,
   Document,
+  PaginatedDocumentResponse,
   DocumentDetail,
   ProcessingStatus,
   Question,
@@ -28,44 +29,37 @@ export class ApiError extends Error {
 
 async function request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
   const token = getToken();
-  const headers: Record<string, string> = {
-    ...(options.headers as Record<string, string>),
+  const headers: HeadersInit = {
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    ...options.headers,
   };
 
-  if (token) {
-    headers["Authorization"] = `Bearer ${token}`;
+  // Only set application/json if body is not FormData
+  if (!(options.body instanceof FormData)) {
+    (headers as Record<string, string>)["Content-Type"] = "application/json";
   }
 
-  // Set json content-type if body is object and not FormData
-  if (options.body && !(options.body instanceof FormData)) {
-    headers["Content-Type"] = "application/json";
-  }
-
-  const res = await fetch(`${API_BASE}${endpoint}`, {
+  const response = await fetch(`${API_BASE}${endpoint}`, {
     ...options,
     headers,
   });
 
-  if (!res.ok) {
-    let errorDetail = `Request failed with status ${res.status}`;
-    let errorData = null;
+  if (!response.ok) {
+    let errorData: any = {};
     try {
-      errorData = await res.json();
-      if (errorData.detail) {
-        errorDetail = typeof errorData.detail === "string" ? errorData.detail : JSON.stringify(errorData.detail);
-      }
+      errorData = await response.json();
     } catch {
-      // Body not JSON
+      errorData = { detail: response.statusText };
     }
-    throw new ApiError(res.status, errorDetail, errorData);
+    const message = errorData.detail || `Request failed with status ${response.status}`;
+    throw new ApiError(response.status, message, errorData);
   }
 
-  // Handle empty responses
-  if (res.status === 204) {
+  if (response.status === 204) {
     return {} as T;
   }
 
-  return (await res.json()) as T;
+  return response.json();
 }
 
 export const api = {
@@ -95,30 +89,61 @@ export const api = {
         }
       );
     },
-    list: () => request<Document[]>("/documents"),
+    list: (params?: { page?: number; limit?: number }) => {
+      const q = new URLSearchParams();
+      if (params?.page) q.set("page", String(params.page));
+      if (params?.limit) q.set("limit", String(params.limit));
+      const queryStr = q.toString() ? `?${q.toString()}` : "";
+      return request<PaginatedDocumentResponse>(`/documents${queryStr}`);
+    },
     get: (id: string) => request<DocumentDetail>(`/documents/${id}`),
     getStatus: (id: string) => request<ProcessingStatus>(`/documents/${id}/status`),
     getPageImageUrl: (id: string, pageNum: number) => `${API_BASE}/documents/${id}/pages/${pageNum}`,
     relate: (id: string, relatedId: string, relationshipType: string = "ANSWER_KEY") =>
-      request<{ id: string }>(`/documents/${id}/related`, {
+      request<{
+        id: string;
+        parent_document_id: string;
+        related_document_id: string;
+        relationship_type: string;
+        resolved_count: number;
+        unresolved_count: number;
+        invalid_count: number;
+        message?: string;
+      }>(`/documents/${id}/related`, {
         method: "POST",
         body: JSON.stringify({
           related_document_id: relatedId,
           relationship_type: relationshipType,
         }),
       }),
+    retry: (id: string) =>
+      request<{ document_id: string; job_id: string; filename: string; status: string; message: string }>(
+        `/documents/${id}/retry`,
+        { method: "POST" }
+      ),
+    delete: (id: string) =>
+      request<void>(`/documents/${id}`, { method: "DELETE" }),
   },
 
   questions: {
     listForDoc: (
       docId: string,
-      params?: { status?: string; review_required?: boolean; min_confidence?: number; search?: string }
+      params?: {
+        status?: string;
+        review_required?: boolean;
+        min_confidence?: number;
+        search?: string;
+        page?: number;
+        limit?: number;
+      }
     ) => {
       const q = new URLSearchParams();
       if (params?.status) q.set("status", params.status);
       if (params?.review_required !== undefined) q.set("review_required", String(params.review_required));
       if (params?.min_confidence !== undefined) q.set("min_confidence", String(params.min_confidence));
       if (params?.search) q.set("search", params.search);
+      if (params?.page) q.set("page", String(params.page));
+      if (params?.limit) q.set("limit", String(params.limit));
       const queryStr = q.toString() ? `?${q.toString()}` : "";
       return request<QuestionListResponse>(`/documents/${docId}/questions${queryStr}`);
     },

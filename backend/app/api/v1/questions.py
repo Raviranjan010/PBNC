@@ -29,32 +29,44 @@ async def get_document_questions(
     review_required: Optional[bool] = None,
     min_confidence: Optional[float] = None,
     search: Optional[str] = None,
+    page: int = Query(1, ge=1),
+    limit: int = Query(20, ge=1, le=100),
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
     doc = await get_document_for_user(document_id, user, db)
 
-    stmt = (
-        select(Question)
-        .options(selectinload(Question.options))
-        .where(Question.document_id == doc.id)
-    )
+    base_query = select(Question).where(Question.document_id == doc.id)
 
     if status_filter:
-        stmt = stmt.where(Question.status == status_filter.upper())
+        base_query = base_query.where(Question.status == status_filter.upper())
     if review_required is not None:
-        stmt = stmt.where(Question.review_required == review_required)
+        base_query = base_query.where(Question.review_required == review_required)
     if min_confidence is not None:
-        stmt = stmt.where(Question.confidence >= min_confidence)
+        base_query = base_query.where(Question.confidence >= min_confidence)
     if search:
-        stmt = stmt.where(Question.question_text.ilike(f"%{search}%"))
+        base_query = base_query.where(Question.question_text.ilike(f"%{search}%"))
 
-    stmt = stmt.order_by(Question.question_number.asc())
+    # Total count matching filters
+    count_stmt = select(func.count()).select_from(base_query.subquery())
+    total = (await db.execute(count_stmt)).scalar() or 0
+
+    stmt = (
+        base_query
+        .options(selectinload(Question.options))
+        .order_by(Question.question_number.asc())
+        .offset((page - 1) * limit)
+        .limit(limit)
+    )
     result = await db.execute(stmt)
     questions = result.scalars().all()
+    has_next = (page * limit) < total
 
     return QuestionListResponse(
-        total=len(questions),
+        total=total,
+        page=page,
+        limit=limit,
+        has_next=has_next,
         items=[QuestionResponse.model_validate(q) for q in questions]
     )
 

@@ -1,15 +1,16 @@
 import os
 import uuid
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, status
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Query, Response, status
 from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
-from sqlalchemy import func
+from sqlalchemy import func, delete
 
 from backend.app.core.database import get_db
 from backend.app.core.storage import storage, sanitize_filename
+from backend.app.core.rate_limiter import rate_limit_upload
 from backend.app.models.user import User
 from backend.app.models.document import Document, DocumentPage, DocumentRelationship
 from backend.app.models.job import ProcessingJob
@@ -22,6 +23,7 @@ from backend.app.services.document_status import recompute_document_status_and_c
 from backend.app.schemas.document import (
     DocumentUploadResponse,
     DocumentResponse,
+    PaginatedDocumentResponse,
     DocumentDetailResponse,
     DocumentPageResponse,
     ProcessingStatusResponse,
@@ -36,12 +38,13 @@ router = APIRouter(prefix="/documents", tags=["Documents"])
 @router.post("/upload", response_model=DocumentUploadResponse, status_code=status.HTTP_202_ACCEPTED)
 async def upload_document(
     file: UploadFile = File(...),
-    user: User = Depends(get_current_user),
+    user: User = Depends(rate_limit_upload),
     db: AsyncSession = Depends(get_db)
 ):
     """
     Accepts file upload, executes strict validation (magic bytes, size, integrity),
     saves file safely, creates database records, and queues async extraction.
+    Rate limited per authenticated user.
     """
     content = await file.read()
     filename = file.filename or "uploaded_document.pdf"
@@ -99,18 +102,123 @@ async def upload_document(
         message="Document uploaded successfully and queued for processing."
     )
 
-@router.get("", response_model=List[DocumentResponse])
+@router.get("", response_model=PaginatedDocumentResponse)
 async def list_documents(
+    page: int = Query(1, ge=1),
+    limit: int = Query(20, ge=1, le=100),
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
+    """Lists uploaded documents for the current user with pagination."""
+    count_stmt = select(func.count(Document.id)).where(Document.user_id == user.id)
+    total = (await db.execute(count_stmt)).scalar() or 0
+
     stmt = (
         select(Document)
         .where(Document.user_id == user.id)
         .order_by(Document.created_at.desc())
+        .offset((page - 1) * limit)
+        .limit(limit)
     )
     result = await db.execute(stmt)
-    return result.scalars().all()
+    items = result.scalars().all()
+    has_next = (page * limit) < total
+
+    return PaginatedDocumentResponse(
+        total=total,
+        page=page,
+        limit=limit,
+        has_next=has_next,
+        items=[DocumentResponse.model_validate(doc) for doc in items]
+    )
+
+@router.post("/{document_id}/retry", response_model=DocumentUploadResponse, status_code=status.HTTP_202_ACCEPTED)
+async def retry_document_processing(
+    document_id: str,
+    user: User = Depends(rate_limit_upload),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Deliberately retries extraction for a failed, partial, or review-required document.
+    Performs transactional cleanup of prior extractions to guarantee idempotency.
+    Rate limited per authenticated user.
+    """
+    doc = await get_document_for_user(document_id, user, db)
+
+    # Validates document is in a retryable state
+    if doc.status == "COMPLETED" and (doc.average_confidence or 0) >= 0.90:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Document is already completed with high confidence and cannot be retried."
+        )
+    if doc.status in ["QUEUED", "PROCESSING"]:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Document is currently being processed."
+        )
+
+    # Transactional cleanup of previous extraction results
+    await db.execute(delete(Question).where(Question.document_id == doc.id))
+    await db.execute(delete(ExtractionWarning).where(ExtractionWarning.document_id == doc.id))
+    await db.execute(delete(ReviewItem).where(ReviewItem.document_id == doc.id))
+    await db.execute(delete(AnswerKey).where(AnswerKey.document_id == doc.id))
+
+    doc.status = "QUEUED"
+    doc.average_confidence = None
+
+    job_id = str(uuid.uuid4())
+    job = ProcessingJob(
+        id=job_id,
+        document_id=doc.id,
+        status="QUEUED",
+        current_step="INITIALIZING",
+        step_details=[{
+            "step": "QUEUED",
+            "message": "Document retry initiated and queued for re-extraction.",
+        }],
+    )
+    db.add(job)
+    await db.commit()
+
+    dispatch_document_task(doc.id, job.id)
+
+    return DocumentUploadResponse(
+        document_id=doc.id,
+        job_id=job.id,
+        filename=doc.original_filename,
+        status="QUEUED",
+        message="Document retry queued successfully."
+    )
+
+@router.delete("/{document_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_document(
+    document_id: str,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Deletes a document, its physical storage file and rendered pages,
+    and cascades deletion to all database records.
+    """
+    doc = await get_document_for_user(document_id, user, db)
+
+    # Delete storage file
+    if doc.storage_path:
+        await storage.delete_file(doc.storage_path)
+
+    # Delete rendered page images if any
+    pages_stmt = select(DocumentPage).where(DocumentPage.document_id == doc.id)
+    pages_res = await db.execute(pages_stmt)
+    for p in pages_res.scalars().all():
+        if p.image_path:
+            await storage.delete_file(p.image_path)
+
+    # Delete document record (foreign keys cascade in DB)
+    await db.delete(doc)
+    await db.commit()
+
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
 
 @router.get("/{document_id}", response_model=DocumentDetailResponse)
 async def get_document_details(
