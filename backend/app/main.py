@@ -67,10 +67,73 @@ app.include_router(analytics_router, prefix=settings.API_V1_STR)
 
 @app.get("/health", tags=["Health"])
 async def health_check():
-    """Service health probe endpoint."""
+    """Service liveness probe endpoint."""
     return {
         "status": "healthy",
         "service": settings.PROJECT_NAME,
         "version": settings.VERSION,
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
+
+@app.get("/health/ready", tags=["Health"])
+async def readiness_check():
+    """
+    Readiness probe verifying real dependencies:
+    - Database reachability (SELECT 1)
+    - Redis broker / ping
+    - Safe storage writability
+    """
+    import os
+    checks = {}
+    is_ready = True
+
+    # 1. Database check
+    try:
+        from sqlalchemy import text
+        async with async_engine.connect() as conn:
+            await conn.execute(text("SELECT 1"))
+        checks["database"] = {"status": "ok"}
+    except Exception as e:
+        is_ready = False
+        checks["database"] = {"status": "error", "detail": str(e)}
+
+    # 2. Redis check
+    try:
+        import redis.asyncio as aioredis
+        r = aioredis.from_url(settings.REDIS_URL, socket_timeout=2.0)
+        pong = await r.ping()
+        await r.aclose()
+        if pong:
+            checks["redis"] = {"status": "ok"}
+        else:
+            is_ready = False
+            checks["redis"] = {"status": "error", "detail": "ping failed"}
+    except Exception as e:
+        is_ready = False
+        checks["redis"] = {"status": "error", "detail": str(e)}
+
+    # 3. Storage check
+    try:
+        storage_dir = settings.STORAGE_DIR
+        os.makedirs(storage_dir, exist_ok=True)
+        probe_file = os.path.join(storage_dir, ".readiness_probe")
+        with open(probe_file, "w") as f:
+            f.write("probe")
+        if os.path.exists(probe_file):
+            os.remove(probe_file)
+        checks["storage"] = {"status": "ok"}
+    except Exception as e:
+        is_ready = False
+        checks["storage"] = {"status": "error", "detail": str(e)}
+
+    payload = {
+        "status": "ready" if is_ready else "unready",
+        "service": settings.PROJECT_NAME,
+        "version": settings.VERSION,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "checks": checks,
+    }
+
+    if not is_ready:
+        return JSONResponse(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, content=payload)
+    return JSONResponse(status_code=status.HTTP_200_OK, content=payload)

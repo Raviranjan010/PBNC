@@ -53,6 +53,10 @@ class Settings(BaseSettings):
     CONFIDENCE_VERIFIED_MIN: float = 0.90
     CONFIDENCE_PARTIAL_MIN: float = 0.70
 
+    # Rate Limiting
+    RATE_LIMIT_AUTH_PER_MINUTE: int = 10
+    RATE_LIMIT_UPLOAD_PER_MINUTE: int = 20
+
     # CORS
     CORS_ORIGINS: List[str] = [
         "http://localhost:3000",
