@@ -52,6 +52,8 @@ class ConfidenceCalculator:
             answer_signal = 1.0
         elif ans_status == "NOT_FOUND":
             answer_signal = 0.80  # Questions often don't have answer keys attached
+        elif ans_status == "INVALID":
+            answer_signal = 0.30  # Explicit mismatch indicates data quality issue
         else:  # UNCERTAIN
             answer_signal = 0.40
 

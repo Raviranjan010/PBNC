@@ -13,8 +13,12 @@ from backend.app.core.storage import storage, sanitize_filename
 from backend.app.models.user import User
 from backend.app.models.document import Document, DocumentPage, DocumentRelationship
 from backend.app.models.job import ProcessingJob
-from backend.app.models.question import Question
+from backend.app.models.question import Question, QuestionOption
+from backend.app.models.answer import AnswerKey
 from backend.app.models.review import ReviewItem, ExtractionWarning
+from backend.app.services.answer_matcher import AnswerMatcher
+from backend.app.services.confidence import ConfidenceCalculator
+from backend.app.services.document_status import recompute_document_status_and_confidence
 from backend.app.schemas.document import (
     DocumentUploadResponse,
     DocumentResponse,
@@ -254,13 +258,147 @@ async def associate_related_document(
     doc = await get_document_for_user(document_id, user, db)
     related_doc = await get_document_for_user(req.related_document_id, user, db)
 
-    # Create relationship
-    rel = DocumentRelationship(
-        parent_document_id=doc.id,
-        related_document_id=related_doc.id,
-        relationship_type=req.relationship_type,
+    # Validate processing state if relationship is ANSWER_KEY
+    if req.relationship_type == "ANSWER_KEY":
+        if related_doc.status in ["QUEUED", "PROCESSING"]:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="The related answer-key document must finish processing before association."
+            )
+        if related_doc.status == "FAILED":
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="The related answer-key document failed processing and cannot be used as an answer key."
+            )
+
+    # Create relationship if it doesn't already exist
+    rel_stmt = select(DocumentRelationship).where(
+        DocumentRelationship.parent_document_id == doc.id,
+        DocumentRelationship.related_document_id == related_doc.id,
+        DocumentRelationship.relationship_type == req.relationship_type
     )
-    db.add(rel)
-    await db.commit()
-    await db.refresh(rel)
-    return rel
+    rel_res = await db.execute(rel_stmt)
+    rel = rel_res.scalars().first()
+    if not rel:
+        rel = DocumentRelationship(
+            parent_document_id=doc.id,
+            related_document_id=related_doc.id,
+            relationship_type=req.relationship_type,
+        )
+        db.add(rel)
+        await db.commit()
+        await db.refresh(rel)
+
+    resolved_count = 0
+    unresolved_count = 0
+    invalid_count = 0
+    message = "Document relationship established."
+
+    if req.relationship_type == "ANSWER_KEY":
+        pages_stmt = (
+            select(DocumentPage)
+            .where(DocumentPage.document_id == related_doc.id)
+            .order_by(DocumentPage.page_number)
+        )
+        pages_res = await db.execute(pages_stmt)
+        pages = pages_res.scalars().all()
+
+        pages_payload = [
+            {
+                "page_number": p.page_number,
+                "text": ((p.extracted_text or "") + "\n" + (p.ocr_text or "")).strip(),
+            }
+            for p in pages
+        ]
+
+        detected_key = AnswerMatcher.find_answer_key_in_pages(pages_payload)
+        if not detected_key:
+            message = "Relationship established, but no answer key structure could be parsed from the related document."
+        else:
+            # Persist AnswerKey record associated with the PARENT document
+            ak_record = AnswerKey(
+                document_id=doc.id,
+                raw_key_text=detected_key.raw_text,
+                detected_format=detected_key.detected_format,
+                source_page=detected_key.source_page,
+                parsed_mappings=detected_key.mappings,
+            )
+            db.add(ak_record)
+            await db.commit()
+
+            # Load parent document questions with options and warnings
+            q_stmt = (
+                select(Question)
+                .options(selectinload(Question.options), selectinload(Question.warnings))
+                .where(Question.document_id == doc.id)
+                .order_by(Question.question_number.asc())
+            )
+            q_res = await db.execute(q_stmt)
+            parent_questions = q_res.scalars().all()
+
+            for q in parent_questions:
+                q_num = str(q.question_number).strip()
+                if q_num in detected_key.mappings:
+                    matched_ans = detected_key.mappings[q_num]
+                    # Validate that the option actually exists if options are present
+                    has_option = any(opt.option_key == matched_ans for opt in q.options) if q.options else True
+                    if q.options and not has_option:
+                        q.answer = None
+                        q.answer_status = "INVALID"
+                        q.review_required = True
+                        q.status = "REVIEW_REQUIRED"
+                        invalid_count += 1
+                        warning = ExtractionWarning(
+                            document_id=doc.id,
+                            question_id=q.id,
+                            stage="ANSWER_KEY",
+                            warning_code="INVALID_ANSWER_KEY",
+                            message=f"Answer key maps Question {q_num} to option '{matched_ans}', but available options are {', '.join(o.option_key for o in q.options)}.",
+                            severity="WARNING",
+                        )
+                        db.add(warning)
+                        review_item = ReviewItem(
+                            document_id=doc.id,
+                            question_id=q.id,
+                            issue_type="INVALID_ANSWER_KEY",
+                            description=f"Answer key maps Question {q_num} to option '{matched_ans}', which does not match any available options.",
+                        )
+                        db.add(review_item)
+                    else:
+                        q.answer = matched_ans
+                        q.answer_status = "CONFIRMED"
+                        q.answer_source_document_id = related_doc.id
+                        q.answer_source_page = detected_key.source_page
+                        # Recalculate confidence for question
+                        first_page = q.source_pages[0] if q.source_pages else 1
+                        q.confidence = ConfidenceCalculator.calculate_question_confidence(
+                            question=q,
+                            page_ocr_conf=1.0,
+                            is_digital=True
+                        )
+                        q.status, q.review_required = ConfidenceCalculator.determine_status_and_review(
+                            q.confidence, has_warnings=bool(q.warnings), is_uncertain=False
+                        )
+                        resolved_count += 1
+                else:
+                    if q.answer_status != "CONFIRMED":
+                        q.answer_status = "NOT_FOUND"
+                        q.answer = None
+                    unresolved_count += 1
+
+            await db.commit()
+            await recompute_document_status_and_confidence(db, doc)
+            message = f"Answer key associated successfully. Resolved {resolved_count} answers, {unresolved_count} unresolved, {invalid_count} invalid."
+
+    return RelatedDocumentResponse(
+        id=rel.id,
+        parent_document_id=rel.parent_document_id,
+        related_document_id=rel.related_document_id,
+        relationship_type=rel.relationship_type,
+        created_at=rel.created_at,
+        resolved_count=resolved_count,
+        unresolved_count=unresolved_count,
+        invalid_count=invalid_count,
+        message=message,
+    )
+

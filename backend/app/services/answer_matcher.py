@@ -69,7 +69,9 @@ class AnswerMatcher:
     ) -> None:
         """
         Associates detected answer key mappings to questions.
-        If an answer is ambiguous or cannot be matched, marks answer_status='UNCERTAIN' and review_required=True.
+        - Matches confirmed answers to question options.
+        - Flags mismatched keys (e.g. key E for options A-D) as INVALID.
+        - Leaves unmapped questions as NOT_FOUND unless already UNCERTAIN/flagged.
         """
         if not answer_key:
             for q in questions:
@@ -88,25 +90,28 @@ class AnswerMatcher:
             if q_num in answer_key.mappings:
                 matched_ans = answer_key.mappings[q_num]
                 # Validate that the option actually exists if options are present
+                options = getattr(q, 'options', [])
                 has_option = any(
-                    (opt.key if hasattr(opt, 'key') else opt.get('key', '')) == matched_ans
-                    for opt in getattr(q, 'options', [])
-                )
-                if getattr(q, 'options', []) and not has_option:
-                    # Mismatch: Answer key says 'D' but question only has options A, B, C!
-                    setattr(q, 'answer', matched_ans)
-                    setattr(q, 'answer_status', "UNCERTAIN")
+                    (opt.option_key if hasattr(opt, 'option_key') else (opt.key if hasattr(opt, 'key') else opt.get('option_key', opt.get('key', '')))) == matched_ans
+                    for opt in options
+                ) if options else True
+
+                if options and not has_option:
+                    # Mismatch: Answer key says 'E' but question only has options A-D!
+                    setattr(q, 'answer', None)
+                    setattr(q, 'answer_status', "INVALID")
                     setattr(q, 'review_required', True)
-                    if hasattr(q, 'warnings'):
-                        q.warnings.append(f"Answer key indicates '{matched_ans}', but options do not contain this key.")
+                    warn_msg = f"Answer key indicates '{matched_ans}', but options do not contain this key."
+                    if hasattr(q, 'warnings') and isinstance(q.warnings, list):
+                        q.warnings.append(warn_msg)
                 else:
                     setattr(q, 'answer', matched_ans)
                     setattr(q, 'answer_status', "CONFIRMED")
                     setattr(q, 'answer_source_page', answer_key.source_page)
                     setattr(q, 'answer_source_document_id', doc_id)
             else:
+                # No mapping found for this question
+                current_status = getattr(q, 'answer_status', 'NOT_FOUND')
+                if current_status not in ["UNCERTAIN", "INVALID"]:
+                    setattr(q, 'answer_status', "NOT_FOUND")
                 setattr(q, 'answer', None)
-                setattr(q, 'answer_status', "UNCERTAIN")
-                setattr(q, 'review_required', True)
-                if hasattr(q, 'warnings'):
-                    q.warnings.append(f"No answer key entry found for Question {q_num}.")

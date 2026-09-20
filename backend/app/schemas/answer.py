@@ -24,6 +24,10 @@ class RelatedDocumentResponse(BaseModel):
     related_document_id: str
     relationship_type: str
     created_at: datetime
+    resolved_count: int = 0
+    unresolved_count: int = 0
+    invalid_count: int = 0
+    message: Optional[str] = None
 
     class Config:
         from_attributes = True

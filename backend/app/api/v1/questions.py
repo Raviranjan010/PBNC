@@ -18,6 +18,7 @@ from backend.app.schemas.question import (
     OptionSchema,
 )
 from backend.app.api.deps import get_current_user, get_document_for_user, get_question_for_user
+from backend.app.services.document_status import recompute_document_status_and_confidence
 
 router = APIRouter(tags=["Questions"])
 
@@ -145,15 +146,8 @@ async def update_question(
 
     await db.commit()
 
-    # Re-evaluate document overall review status
-    unresolved_stmt = select(func.count(Question.id)).where(
-        Question.document_id == doc.id,
-        Question.review_required == True
-    )
-    unresolved_count = (await db.execute(unresolved_stmt)).scalar() or 0
-    if unresolved_count == 0 and doc.status == "REVIEW_REQUIRED":
-        doc.status = "COMPLETED"
-        await db.commit()
+    # Re-evaluate document overall review status and confidence
+    await recompute_document_status_and_confidence(db, doc)
 
     # Reload question with updated options
     stmt_reload = (

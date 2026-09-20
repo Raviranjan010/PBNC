@@ -20,6 +20,7 @@ class QuestionResponse(BaseModel):
     answer: Optional[str] = None
     answer_status: str
     answer_source_page: Optional[int] = None
+    answer_source_document_id: Optional[str] = None
     confidence: float
     status: str
     review_required: bool
@@ -42,4 +43,7 @@ class QuestionUpdateRequest(BaseModel):
 
 class QuestionListResponse(BaseModel):
     total: int
+    page: int = 1
+    limit: int = 20
+    has_next: bool = False
     items: List[QuestionResponse]
