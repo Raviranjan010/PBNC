@@ -16,6 +16,8 @@ import {
   Layers,
   FileCheck,
   KeyRound,
+  RotateCcw,
+  Trash2,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { DocumentDetail } from "@/lib/types";
@@ -30,6 +32,7 @@ export default function DocumentDetailPage() {
 
   const [doc, setDoc] = useState<DocumentDetail | null>(null);
   const [loading, setLoading] = useState(true);
+  const [actionLoading, setActionLoading] = useState(false);
 
   const fetchDoc = async () => {
     setLoading(true);
@@ -40,6 +43,32 @@ export default function DocumentDetailPage() {
       if (err.status === 401) router.push("/login");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleRetry = async () => {
+    setActionLoading(true);
+    try {
+      await api.documents.retry(docId);
+      router.push(`/documents/${docId}/status`);
+    } catch (err: any) {
+      alert(`Retry failed: ${err.message || "Unknown error"}`);
+      setActionLoading(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!doc) return;
+    if (!confirm(`Are you sure you want to delete "${doc.original_filename}"? All questions and records will be deleted.`)) {
+      return;
+    }
+    setActionLoading(true);
+    try {
+      await api.documents.delete(docId);
+      router.push("/documents");
+    } catch (err: any) {
+      alert(`Delete failed: ${err.message || "Unknown error"}`);
+      setActionLoading(false);
     }
   };
 
@@ -131,6 +160,30 @@ export default function DocumentDetailPage() {
               CSV
             </Button>
           </a>
+
+          {["FAILED", "REVIEW_REQUIRED", "PARTIAL"].includes(doc.status) && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleRetry}
+              disabled={actionLoading}
+              className="text-amber-600 border-amber-300 hover:bg-amber-50"
+            >
+              <RotateCcw className={`w-3.5 h-3.5 mr-1.5 ${actionLoading ? "animate-spin" : ""}`} />
+              Retry Extraction
+            </Button>
+          )}
+
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleDelete}
+            disabled={actionLoading}
+            className="text-danger border-danger/30 hover:bg-red-50"
+          >
+            <Trash2 className="w-3.5 h-3.5 mr-1.5" />
+            Delete Document
+          </Button>
         </div>
       </div>
 
